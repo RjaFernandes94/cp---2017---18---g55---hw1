@@ -10,7 +10,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <pthread.h>
-#include <time.h>
+#include <sys/time.h>
 #include <cilk/cilk.h>
 #include <cilk/cilk_api.h>
 
@@ -28,7 +28,7 @@
 #define TRUE  1
 #define FALSE 0
 
-static long convertToNSec = 0.000000001;
+//performance profiler
 
 typedef struct {
     int i;
@@ -53,9 +53,18 @@ int delay = 0;
 int threads = 1;
 
 char** board;
-struct timespec initTime, finalTime;
+struct timeval initTime, finalTime;
 
 
+long timeElapsed (struct timeval start, struct timeval end) {
+  long secs_used,micros_used;
+
+  secs_used = (end.tv_sec - start.tv_sec); //avoid overflow by subtracting first
+  micros_used = ((secs_used*1000000) + end.tv_usec) - (start.tv_usec);
+  return micros_used;
+}
+
+//nao paralelizavel
 void init_board() {
     board = malloc(board_size * sizeof(char*));
     for (int i = 0; i < board_size; i++) {
@@ -69,6 +78,7 @@ void init_board() {
     board[board_size/2][board_size/2] = R;
 }
 
+//sequencial
 void init_move(move* m, int i, int j, char color) {
     m->i = i;
     m->j = j;
@@ -84,6 +94,7 @@ void init_move(move* m, int i, int j, char color) {
     m->heuristic = 0;
 }
 
+//sequencial
 int valid_move(int i, int j) {
 	if (i >= 0 && i < board_size && j >= 0 && j < board_size)
 		return TRUE;
@@ -91,6 +102,7 @@ int valid_move(int i, int j) {
 		return FALSE;
 }
 
+//sequencial
 char opponent(char turn) {
 	if (turn == R)
  		return B;
@@ -112,6 +124,7 @@ int score(char color)
 	return res;
 }
 
+//nao paralelizavel
 void print_board() {
     if (print_mode == 's')
         return;
@@ -139,24 +152,27 @@ void print_board() {
     printf("\n");
 }
 
+//sequencial
 void print_scores() {
 	int w =	score(R);
 	int b =	score(B);
 	printf("score - red:%i blue:%i\n",w,b);
 if(print_time)
 {
-double time = (finalTime.tv_nsec - initTime.tv_nsec) + (finalTime.tv_sec -initTime.tv_sec) * convertToNSec;
-printf("%f\n", time);
+double time = timeElapsed(initTime, finalTime);
+printf("%i	%i	%f	%i	%i\n",board_size ,threads, time, w, b);
 }
 
 }
 
+//sequencial
 void free_board() {
     for (int i = 0; i < board_size; i++)
         free(board[i]);
     free(board);
 }
 
+//sequencial
 void finish_game() {
     print_board();
     print_scores();
@@ -173,6 +189,7 @@ void flip_direction (move* m, int inc_i, int inc_j) {
 	}
 }
 
+//sequencial
 void flip_board(move* m) {
     board[m->i][m->j] = m->color;
     if (m->right)
@@ -213,6 +230,7 @@ int get_direction_heuristic(move* m, char opp, int inc_i, int inc_j) {
 		return 0;
 }
 
+//sequencial
 void get_move(move* m) {
 	if (board[m->i][m->j] != E)
 		return;
@@ -266,7 +284,8 @@ int make_move(char color) {
     int i, j;
     move best_move, m;
     best_move.heuristic = 0;
-	
+
+	/*
 	for (i = 0; i < board_size; i++) {
 		for (j = 0; j < board_size; j++) {
             init_move(&m,i,j,color);
@@ -276,6 +295,20 @@ int make_move(char color) {
 			}
 		}
 	}
+*/
+
+		
+       cilk_for(i = 0; i < board_size; i++) {
+		for (j = 0; j < board_size; j++) {
+            init_move(&m,i,j,color);
+            get_move(&m);
+			if (m.heuristic > best_move.heuristic) {
+				best_move = m;
+			}
+		}
+	}
+	
+ 
 	if (best_move.heuristic > 0) {
 		flip_board(&best_move);
 		return TRUE;	//made a move
@@ -289,6 +322,7 @@ void help(const char* prog_name) {
     exit (1);
 }
 
+//sequencial
 void get_flags(int argc, char * argv[]) {
     char ch;
     while ((ch = getopt(argc, argv, "scatd:b:n:")) != -1) {
@@ -335,14 +369,13 @@ void get_flags(int argc, char * argv[]) {
 }
 
 
-
 int main (int argc, char * argv[]) {
-
-clock_gettime(CLOCK_REALTIME, &initTime);  
+ gettimeofday(&initTime, NULL); 
  get_flags(argc,argv);
     // argc -= optind;
     // argv += optind;
-    
+//const char nThreads[12] = threads + '0';
+    __cilkrts_set_param("nworkers", "4");
 	init_board();
 	int cant_move_r = FALSE, cant_move_b = FALSE;
 	char turn = R;
@@ -367,7 +400,7 @@ clock_gettime(CLOCK_REALTIME, &initTime);
 		turn = opponent(turn);
         usleep(delay*1000);
 	}
-clock_gettime(CLOCK_REALTIME, &finalTime);
+gettimeofday(&finalTime, NULL);
 finish_game();
 }
 

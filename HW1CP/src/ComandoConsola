@@ -1,0 +1,17 @@
+for b in 4 16 50 100; do
+for i in 1 2 3 4 5; do
+./othello -s –t $i;
+done;
+done | tee resultsParallel.txt
+
+for n in 1 2 4 8; do
+for c in 4 8 15 20 30; do
+for i in 1 2 3 4 5; do
+./othello -s –t -b $c;
+done;
+done | tee results.txt
+
+
+i -> numero de testes a ser feito para cada caso
+n -> numero de threads
+
